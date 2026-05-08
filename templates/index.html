@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Portfolio News Monitor</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════  HEADER  ═══════════════════════ -->
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-icon">📊</span>
+      <div>
+        <span class="logo-title">AI Portfolio News Monitor</span>
+        <span class="logo-sub">Powered by Groq + Tavily</span>
+      </div>
+    </div>
+    <div class="model-badge" id="activeBadge"></div>
+  </div>
+</header>
+
+<!-- ═══════════════════════  LAYOUT  ═══════════════════════ -->
+<div class="layout">
+
+  <!-- ──────────────  SIDEBAR  ────────────── -->
+  <aside class="sidebar">
+    <form id="analyzeForm">
+
+      <!-- ── Previous Report Upload ── -->
+      <div class="form-section upload-section">
+        <label class="section-label">
+          📂 Previous Report
+          <span class="badge-optional">optional</span>
+        </label>
+        <p class="hint">Upload a past JSON report to only fetch <em>new</em> developments since then.</p>
+        <label class="upload-drop" id="uploadDrop">
+          <input type="file" id="jsonUpload" accept=".json" />
+          <span id="uploadLabel">⬆️ Drop JSON or click to browse</span>
+        </label>
+        <div id="uploadInfo" style="display:none">
+          <div class="upload-meta" id="uploadMeta"></div>
+          <button type="button" class="btn-clear-upload" onclick="clearUpload()">✕ Remove report</button>
+        </div>
+      </div>
+
+      <!-- Companies -->
+      <div class="form-section">
+        <label class="section-label">
+          Portfolio Companies
+          <span class="badge-max">max 3</span>
+        </label>
+        <p class="hint">Enter tickers (e.g. AAPL, 7203.T, SGFIN.NS, FOUR.L).</p>
+        <div id="companyInputs">
+          <div class="company-row">
+            <input type="text" class="company-input" placeholder="e.g. AAPL or Apple Inc" maxlength="80" />
+            <button type="button" class="btn-remove" onclick="removeCompany(this)" title="Remove">✕</button>
+          </div>
+        </div>
+        <button type="button" class="btn-add" id="addCompanyBtn" onclick="addCompany()">
+          + Add company
+        </button>
+      </div>
+
+      <!-- LLM Model -->
+      <div class="form-section">
+        <label class="section-label">LLM Model</label>
+        <div class="model-list" id="modelList">
+          {% for m in models %}
+          <label class="model-option {% if m.get('default') %}selected{% endif %}">
+            <input
+              type="radio"
+              name="model"
+              value="{{ m.id }}"
+              {% if m.get('default') %}checked{% endif %}
+            />
+            <span class="model-name">{{ m.label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Search Areas -->
+      <div class="form-section">
+        <label class="section-label">Search Areas</label>
+
+        <!-- Filings sub-group -->
+        <div class="search-group-label">📄 Company Filings</div>
+        <label class="checkbox-option checkbox-sub">
+          <input type="checkbox" id="chkExchangeFilings" checked />
+          <span>
+            <strong>Stock Exchange Filings</strong>
+            <small id="hintExchange">SEC / TDnet / NSE / BSE / Investegate (last 7 days)</small>
+          </span>
+        </label>
+
+        <!-- News sub-group -->
+        <div class="search-group-label" style="margin-top:10px">📰 Company News</div>
+        <label class="checkbox-option checkbox-sub">
+          <input type="checkbox" id="chkCompanyNews" checked />
+          <span>
+            <strong>Company News</strong>
+            <small id="hintNews">Recent news, earnings, contracts (last 7 days)</small>
+          </span>
+        </label>
+        <label class="checkbox-option checkbox-sub">
+          <input type="checkbox" id="chkIndustryNews" />
+          <span>
+            <strong>Industry News</strong>
+            <small id="hintIndustry">Sector &amp; country news relevant to company (last 7 days)</small>
+          </span>
+        </label>
+        <label class="checkbox-option checkbox-sub">
+          <input type="checkbox" id="chkCustomSearches" />
+          <span>
+            <strong>Custom Searches</strong>
+            <small>Your own search queries</small>
+          </span>
+        </label>
+
+        <!-- Custom search list (shown when chkCustomSearches checked) -->
+        <div id="customSearchesPanel" style="display:none; margin-top:6px">
+          <div id="customSearchList"></div>
+          <button type="button" class="btn-add-search" id="addSearchBtn" onclick="addCustomSearch()">
+            + Add search query
+          </button>
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <button type="submit" class="btn-analyze" id="analyzeBtn">
+        <span id="analyzeBtnIcon">🔍</span>
+        <span id="analyzeBtnText">Run Analysis</span>
+      </button>
+
+      <!-- Clear -->
+      <button type="button" class="btn-clear" id="clearBtn" onclick="clearResults()" style="display:none">
+        ✕ Clear &amp; Reset
+      </button>
+
+    </form>
+  </aside>
+
+  <!-- ──────────────  MAIN PANEL  ────────────── -->
+  <main class="main-panel">
+
+    <!-- Empty state -->
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">📡</div>
+      <h2>Ready to monitor your portfolio</h2>
+      <p>Enter up to 3 companies on the left, choose your LLM and search areas, then click <strong>Run Analysis</strong>.</p>
+      <ul class="feature-list">
+        <li>📄 Stock exchange filings (SEC / TDnet / NSE / BSE / Investegate)</li>
+        <li>📰 Company news (earnings, contracts, partnerships)</li>
+        <li>🌐 Industry news by sector &amp; country</li>
+        <li>🔍 Custom search queries you define</li>
+        <li>🧠 AI-generated impact assessment per development</li>
+        <li>⬇️  Download full report as JSON</li>
+      </ul>
+    </div>
+
+    <!-- Progress panel -->
+    <div class="progress-panel" id="progressPanel" style="display:none">
+      <div class="progress-header">
+        <span id="progressTitle">Analysing portfolio…</span>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" id="progressBar" style="width:0%"></div>
+        </div>
+        <span id="progressPct">0%</span>
+      </div>
+      <div class="progress-trail" id="progressTrail"></div>
+    </div>
+
+    <!-- Results -->
+    <div id="resultsArea"></div>
+
+    <!-- Listen bar -->
+    <div class="listen-bar" id="listenBar" style="display:none">
+      <div class="listen-summary" id="listenSummary"></div>
+      <div class="listen-controls">
+        <button class="btn-listen" id="listenBtn" onclick="toggleListen()">
+          <span id="listenIcon">▶</span>
+          <span id="listenLabel">Listen to Summary</span>
+        </button>
+        <div class="listen-progress-wrap" id="listenProgressWrap" style="display:none">
+          <div class="listen-progress-bar" id="listenProgressBar"></div>
+        </div>
+      </div>
+      <audio id="portfolioAudio" style="display:none"></audio>
+    </div>
+
+    <!-- Download bar -->
+    <div class="download-bar" id="downloadBar" style="display:none">
+      <span>✅ Analysis complete for <strong id="downloadCount"></strong> company/ies</span>
+      <button class="btn-download" id="downloadBtn" onclick="downloadReport()">
+        ⬇️  Download JSON Report
+      </button>
+    </div>
+
+  </main>
+</div><!-- /.layout -->
+
+<!-- ══════════  Company disambiguation modal  ══════════ -->
+<div id="choiceModal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-icon">🔎</span>
+      <h3 class="modal-title">Multiple matches found</h3>
+    </div>
+    <p class="modal-prompt" id="choicePrompt"></p>
+    <div class="modal-list" id="choiceList"></div>
+  </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
