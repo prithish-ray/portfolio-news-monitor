@@ -31,13 +31,44 @@ DEFAULT_TOP_K      = 4     # chunks to return
 # Helpers
 # ---------------------------------------------------------------------------
 
-def fetch_pdf_bytes(url: str, timeout: int = 30) -> bytes | None:
+MAX_PDF_BYTES = 4 * 1024 * 1024   # 4 MB hard cap — prevents OOM on large filings
+
+
+def fetch_pdf_bytes(url: str, timeout: int = 20) -> bytes | None:
+    """
+    Fetch a PDF with a hard size cap (MAX_PDF_BYTES).
+    Uses streaming so we never buffer a multi-MB file we'll then discard.
+    Returns None if the URL is not a PDF, too large, or unreachable.
+    """
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (compatible; PortfolioMonitor/1.0)'}
-        resp = requests.get(url, headers=headers, timeout=timeout)
+        resp = requests.get(url, headers=headers, timeout=timeout, stream=True)
         resp.raise_for_status()
-        if 'pdf' in resp.headers.get('Content-Type', '').lower() or url.lower().endswith('.pdf'):
-            return resp.content
+
+        ct = resp.headers.get('Content-Type', '').lower()
+        if 'pdf' not in ct and not url.lower().endswith('.pdf'):
+            return None
+
+        # Honour Content-Length if present — skip without downloading
+        cl = resp.headers.get('Content-Length')
+        if cl and int(cl) > MAX_PDF_BYTES:
+            logger.info("PDF too large (%s bytes) — skipping %s", cl, url[:70])
+            return None
+
+        # Stream with a byte budget
+        chunks = []
+        total  = 0
+        for chunk in resp.iter_content(chunk_size=65536):
+            total += len(chunk)
+            if total > MAX_PDF_BYTES:
+                logger.info("PDF exceeded %d MB mid-stream — truncating %s",
+                            MAX_PDF_BYTES // 1024 // 1024, url[:70])
+                chunks.append(chunk)
+                break
+            chunks.append(chunk)
+
+        return b"".join(chunks)
+
     except Exception as e:
         logger.warning(f"PDF fetch failed for {url}: {e}")
     return None

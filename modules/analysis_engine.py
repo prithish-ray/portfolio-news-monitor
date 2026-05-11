@@ -9,16 +9,19 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-MAX_FILINGS          = 4      # fewer filings but with full content
+MAX_FILINGS          = 4      # filings passed to LLM
 MAX_NEWS             = 6
 MAX_DEVS             = 6
-FILING_CONTENT_CHARS = 2500   # enough to hold key numbers from a PDF excerpt
-NEWS_CONTENT_CHARS   = 350    # short snippets are fine for news
-HARD_CTX_CHARS       = 9_000
+FILING_CONTENT_CHARS = 1800   # chars per filing sent to LLM
+NEWS_CONTENT_CHARS   = 300
+HARD_CTX_CHARS       = 8_000
 CHARS_PER_TOK        = 3.5
 
+# PDF enrichment: only enrich this many filings per company to cap memory use
+MAX_ENRICHMENTS = 2
+
 # Minimum chars before we consider content "too thin" and try to enrich
-_THIN_THRESHOLD = 350
+_THIN_THRESHOLD = 300
 
 
 def _estimate_tokens(text):
@@ -145,6 +148,10 @@ class AnalysisEngine:
         enriched_count = 0
 
         for i, filing in enumerate(filings):
+            # Hard cap: only enrich the top MAX_ENRICHMENTS filings per company
+            if enriched_count >= MAX_ENRICHMENTS:
+                break
+
             url     = filing.get("url", "")
             content = (filing.get("content") or "").strip()
 
