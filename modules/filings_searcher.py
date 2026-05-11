@@ -24,6 +24,7 @@ import re
 from datetime import datetime
 from .rag_processor import RAGProcessor
 from .tdnet_searcher import TDnetSearcher
+from .nse_searcher import NSESearcher
 
 logger       = logging.getLogger(__name__)
 MAX_RESULTS  = 5
@@ -143,6 +144,7 @@ class FilingsSearcher:
         self.groq    = groq_client
         self.rag     = RAGProcessor()
         self.tdnet   = TDnetSearcher()
+        self.nse     = NSESearcher(tavily_client=tavily_client)
 
     # ── Core fetch helper ─────────────────────────────────────────────────────
     def _fetch(self, query, days_back, exclude_urls,
@@ -209,19 +211,14 @@ class FilingsSearcher:
         return out
 
     # ── NSE India ─────────────────────────────────────────────────────────────
-    def _search_nse(self, info, days_back, exclude_urls):
-        bticker = _base_ticker(info["ticker"])
-        out = []
-        for q in [
-            bticker + " corporate announcement board meeting " + str(CURRENT_YEAR),
-            bticker + " NSE filing disclosure results " + str(CURRENT_YEAR),
-        ]:
-            out.extend(self._fetch(
-                q, days_back, exclude_urls,
-                source_label="NSE India",
-                include_domains=["nseindia.com"],
-            ))
-        return out
+    def _search_nse(self, info, days_back, exclude_urls, progress_cb=None):
+        """Fetch corporate announcements directly from NSE India API."""
+        return self.nse.search(
+            info["ticker"],
+            days_back=days_back,
+            exclude_urls=exclude_urls,
+            progress_cb=progress_cb,
+        )
 
     # ── BSE India ─────────────────────────────────────────────────────────────
     def _search_bse(self, info, days_back, exclude_urls):
@@ -262,7 +259,7 @@ class FilingsSearcher:
         return out
 
     # ── Main entry point ──────────────────────────────────────────────────────
-    def search_all(self, company_info, progress_cb=None, days_back=7,
+    def search_all(self, company_info, progress_cb=None, days_back=30,
                    exclude_urls=None, do_exchange=True, do_ir=False):
         """
         Search filings.
@@ -304,7 +301,8 @@ class FilingsSearcher:
             elif route == "NSE":
                 _emit("Searching NSE India for " + _base_ticker(ticker) + "...")
                 try:
-                    r = self._search_nse(company_info, days_back, exclude_urls)
+                    def _np(msg): _emit("   📋 " + msg)
+                    r = self._search_nse(company_info, days_back, exclude_urls, progress_cb=_np)
                     all_filings.extend(r)
                     _emit("Found " + str(len(r)) + " NSE India filing(s).")
                 except Exception as exc:

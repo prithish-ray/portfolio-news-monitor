@@ -26,9 +26,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GROQ_API_KEY   = os.environ.get("GROQ_API_KEY",   "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")
-TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY",  "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")
-FMP_API_KEY    = os.environ.get("FMP_API_KEY",     "YdT04xUEz5iC9XmYAiaroAGviY01xbxB")
+GROQ_API_KEY   = os.environ["GROQ_API_KEY"]
+TAVILY_API_KEY = os.environ["TAVILY_API_KEY"]
+FMP_API_KEY    = os.environ["FMP_API_KEY"]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,12 +67,7 @@ def health():
 
 @app.route("/quote/<ticker>")
 def get_quote(ticker):
-    """Return % day change for a ticker via FMP. Cached 5 min."""
-    from modules.fmp_client import FMPClient
-    fmp  = FMPClient(FMP_API_KEY)
-    data = fmp.get_quote(ticker.upper())
-    if data:
-        return jsonify(data)
+    """Price quotes require a paid FMP plan — return unavailable on free tier."""
     return jsonify({"ticker": ticker.upper(), "error": "unavailable", "change_pct": None})
 
 
@@ -205,7 +200,7 @@ def tts_summary(session_id):
     try:
         from modules.groq_client import GroqClient
         groq = GroqClient(GROQ_API_KEY)
-        audio_bytes = groq.text_to_speech(briefing, voice="tara")
+        audio_bytes = groq.text_to_speech(briefing, voice="hannah")
         return Response(
             audio_bytes,
             mimetype="audio/wav",
@@ -234,7 +229,7 @@ def _parse_cutoff(existing_report):
             return cutoff, days_back
         except Exception:
             pass
-    return datetime.now(timezone.utc) - timedelta(days=7), 7
+    return datetime.now(timezone.utc) - timedelta(days=30), 30
 
 def _existing_for_ticker(existing_report, ticker, raw_input):
     """Find a company's existing result block by ticker or input string."""
@@ -452,10 +447,13 @@ def _run_analysis(session_id, companies, model,
                 else:
                     logger.info("Skipping industry news for %s — industry not resolved", ticker)
 
-            # ── LLM analysis ──
+            # ── LLM analysis (with relevance filtering) ──
             _emit(q, "progress", {"message": "🧠 Running LLM analysis for " + info["name"] + "...", "percentage": base_pct + int(step_size*0.75)})
+            def _analysis_progress(msg):
+                _emit(q, "progress", {"message": msg, "percentage": base_pct + int(step_size*0.80)})
             try:
-                analysis = analyser.analyze_company(info, filings, news, search_terms)
+                analysis = analyser.analyze_company(info, filings, news, search_terms,
+                                                    progress_cb=_analysis_progress)
             except Exception as e:
                 logger.error("Analysis error: %s", e)
                 analysis = {"company": info["name"], "ticker": ticker, "overall_sentiment": "Neutral",

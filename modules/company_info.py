@@ -1,10 +1,10 @@
 """
-Fetches company metadata via FMP (Financial Modeling Prep).
+Fetches company metadata via FMP (Financial Modeling Prep) — free tier only.
 Search flow:
   1. FMP search-symbol (free tier) — resolves ticker to name + exchange
-  2. FMP profile (bonus; may be paywalled on free tier)
-  3. Tavily web search fallback if name is still a placeholder
-  4. LLM-derived industry from description (always overrides FMP industry)
+  2. Tavily web search fallback if name is still a placeholder
+  3. LLM-derived industry from Tavily snippets (always runs if description available)
+  4. Light Tavily enrichment if sector/country still unknown
 """
 import logging
 import re
@@ -25,6 +25,46 @@ _CORP_RE = re.compile(
     r'\b(plc|PLC|Inc\.?|Ltd\.?|Limited|Corp\.?|Corporation|Group|Holdings?'
     r'|AG|SA|NV|SE|GmbH|AB|ASA|Oyj|SPA|S\.A\.|N\.V\.)\b'
 )
+
+# Trailing legal-structure suffixes to strip.
+# Key design choices:
+#   - "Corp." (period required) is stripped; bare "Corp" is NOT —
+#     "News Corp", "Oracle Corp" are brand names, not just suffixes.
+#   - One pass only: avoids double-stripping brand words.
+#   - After the suffix is gone, trailing commas, periods, and spaces are cleaned.
+_LEGAL_SUFFIX_RE = re.compile(
+    r'[,\s]+'
+    r'('
+    r'Incorporated|Corporation|Limited Liability Company|Limited Partnership'
+    r'|Public Limited Company'
+    r'|Inc\.?|Corp\.|Ltd\.?|Limited|PLC|plc|LLC|LP|LLP'
+    r'|GmbH|AG|SA|NV|SE|AB|ASA|Oyj|SPA|S\.A\.|N\.V\.'
+    r'|Berhad|Bhd\.?'
+    r')'
+    r'\.?\s*$',
+    re.IGNORECASE,
+)
+
+_TRAILING_PUNCT_RE = re.compile(r'[,.\s]+$')
+
+
+def _strip_legal_suffix(name):
+    """
+    Remove a single trailing legal-structure suffix from a company name,
+    then clean up any leftover trailing punctuation.
+
+    Examples:
+        "Vindhya Telelinks Limited"  → "Vindhya Telelinks"
+        "Apple Inc."                 → "Apple"
+        "Samsung Electronics Co., Ltd." → "Samsung Electronics Co"
+        "News Corp"                  → "News Corp"   (bare Corp kept — brand name)
+        "4imprint Group plc"         → "4imprint Group"
+    """
+    if not name:
+        return name
+    cleaned = _LEGAL_SUFFIX_RE.sub("", name.strip())
+    cleaned = _TRAILING_PUNCT_RE.sub("", cleaned).strip()
+    return cleaned or name
 
 
 def _empty_info(ticker, error=""):
@@ -93,7 +133,7 @@ class CompanyInfoFetcher:
             return [
                 {
                     "symbol":        r["symbol"],
-                    "name":          r["name"],
+                    "name":          _strip_legal_suffix(r["name"]),
                     "exchange":      r.get("exchange", ""),
                     "exchange_full": r.get("exchange_full", ""),
                     "currency":      r.get("currency", ""),
@@ -125,7 +165,7 @@ class CompanyInfoFetcher:
                 )
                 info.update({
                     "ticker":        best["symbol"],
-                    "name":          best["name"],
+                    "name":          _strip_legal_suffix(best["name"]),
                     "exchange":      best.get("exchange", ""),
                     "exchange_full": best.get("exchange_full", ""),
                     "currency":      best.get("currency", "USD") or "USD",
@@ -133,22 +173,6 @@ class CompanyInfoFetcher:
                 })
                 logger.info("FMP search-symbol for %s → %s (%s)",
                             key, best["symbol"], best["name"])
-
-            # 1b. Profile endpoint (may be paywalled on free tier — handle silently)
-            symbol_to_fetch = info.get("ticker", key)
-            profile = self._fmp.get_profile(symbol_to_fetch)
-            if profile:
-                # Merge: profile wins for numeric/detail fields; keep search name if profile name is placeholder
-                for field in ["sector", "industry", "country", "website",
-                              "market_cap", "description", "employees",
-                              "exchange", "exchange_full", "currency"]:
-                    val = profile.get(field)
-                    if val and val != "Unknown":
-                        info[field] = val
-                if profile.get("name") and profile["name"] != symbol_to_fetch:
-                    info["name"] = profile["name"]
-                info["source"] = "fmp"
-                logger.info("FMP profile for %s: name='%s'", key, info["name"])
 
         # 2. Name still a placeholder? Try Tavily
         name_is_placeholder = (
@@ -214,7 +238,7 @@ class CompanyInfoFetcher:
                         break
             update = {"country": country, "source": "tavily_fallback"}
             if name:
-                update["name"] = name
+                update["name"] = _strip_legal_suffix(name)
             return {**existing, **update}
         except Exception as exc:
             logger.warning("Tavily lookup failed for '%s': %s", raw_input, exc)

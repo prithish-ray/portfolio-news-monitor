@@ -92,15 +92,15 @@ class GroqClient:
     # ------------------------------------------------------------------
     # Text-to-Speech
     # ------------------------------------------------------------------
-    def text_to_speech(self, text: str, voice: str = "tara") -> bytes:
+    def text_to_speech(self, text: str, voice: str = "hannah") -> bytes:
         """
         Convert text to speech using Groq's Orpheus TTS model.
         Calls the REST endpoint directly (SDK audio.speech not available in all versions).
         Returns raw WAV bytes.
-        Voices: tara, leah, jess, leo, dan, mia, zac, zoe
+        Valid voices: autumn, diana, hannah, austin, daniel, troy
         """
         import requests
-        logger.info("TTS: generating audio for %d chars", len(text))
+        logger.info("TTS: generating audio for %d chars with voice %s", len(text), voice)
         resp = requests.post(
             "https://api.groq.com/openai/v1/audio/speech",
             headers={
@@ -115,5 +115,7 @@ class GroqClient:
             },
             timeout=60,
         )
+        if not resp.ok:
+            logger.error("TTS API error %d: %s", resp.status_code, resp.text)
         resp.raise_for_status()
         return resp.content
