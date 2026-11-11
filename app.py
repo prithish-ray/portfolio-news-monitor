@@ -45,7 +45,7 @@ _choice_queues = {}   # session_id -> queue.Queue (user disambiguation choices)
 _lock = threading.Lock()
 
 MODELS = [
-    {"id": "openai/gpt-oss-20b",      "label": "GPT-OSS 20B"},
+    {"id": "openai/gpt-oss-20b",      "label": "GPT-OSS 20B — Fast (default)", "default": True},
     {"id": "openai/gpt-oss-120b",     "label": "GPT-OSS 120B — Most Powerful"},
 ]
 MAX_COMPANIES = 3
@@ -73,7 +73,7 @@ def get_quote(ticker):
 def start_analysis():
     body = request.get_json(force=True, silent=True) or {}
     companies = [c.strip() for c in body.get("companies", []) if c.strip()][:MAX_COMPANIES]
-    model     = body.get("model", "llama-3.1-8b-instant")
+    model     = body.get("model", "openai/gpt-oss-20b")
 
     search_exchange_filings = bool(body.get("search_exchange_filings", True))
     search_company_news     = bool(body.get("search_company_news",     True))
