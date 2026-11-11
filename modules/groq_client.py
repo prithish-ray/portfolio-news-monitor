@@ -24,7 +24,7 @@ RETRY_DELAY    = 3.0
 
 
 class GroqClient:
-    def __init__(self, api_key: str, model: str = "llama-3.1-8b-instant"):
+    def __init__(self, api_key: str, model: str = "openai/gpt-oss-20b"):
         self.api_key = api_key
         self.client  = Groq(api_key=api_key)
         self.model   = model
