@@ -231,7 +231,7 @@ async function startAnalysis() {
     return;
   }
 
-  const model                  = qs('input[name=model]:checked')?.value || 'llama-3.1-8b-instant';
+  const model                  = qs('input[name=model]:checked')?.value || 'openai/gpt-oss-20b';
   const search_exchange_filings = $('chkExchangeFilings').checked;
   const search_company_news     = $('chkCompanyNews').checked;
   const search_industry_news    = $('chkIndustryNews').checked;
