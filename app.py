@@ -45,8 +45,6 @@ _choice_queues = {}   # session_id -> queue.Queue (user disambiguation choices)
 _lock = threading.Lock()
 
 MODELS = [
-    {"id": "llama-3.1-8b-instant",    "label": "LLaMA 3.1 8B — Fast (default)", "default": True},
-    {"id": "llama-3.3-70b-versatile", "label": "LLaMA 3.3 70B — Versatile"},
     {"id": "openai/gpt-oss-20b",      "label": "GPT-OSS 20B"},
     {"id": "openai/gpt-oss-120b",     "label": "GPT-OSS 120B — Most Powerful"},
 ]
